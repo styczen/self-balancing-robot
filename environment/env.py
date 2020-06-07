@@ -1,46 +1,61 @@
 #!/usr/bin/env python
 import numpy as np
 import pybullet as p
-from parts.wheel import Wheel
-from parts.chassis import Chassis
-from parts.plane import Plane
+from robot_parts.wheel import Wheel
+from robot_parts.chassis import Chassis
+from robot_parts.plane import Plane
 
 
 class SelfBalancingRobotEnv:
-    def __init__(self, physics_client_id: int, measurement_noise=False):
+    OBSERVATION_SIZE = 3
+    ACTION_SIZE = 1
+
+    def __init__(self, physics_client_id: int, measurement_noise=False, noise_coeff=0.01, action_scale=10):
         self._physics_client_id = physics_client_id
         self._forces = [1, 1]
         self._measurement_noise = measurement_noise
+        self._noise_coeff = noise_coeff
         self._robot_id = None
+        self._action_scale = action_scale
 
-    def step(self, action: float) -> tuple:
+    def step(self, action) -> tuple:
         """Apply control and run one step of simulation."""
         p.setJointMotorControlArray(bodyUniqueId=self._robot_id, jointIndices=[0, 1],
                                     controlMode=p.VELOCITY_CONTROL,
-                                    targetVelocities=[action, action], forces=self._forces,
+                                    targetVelocities=[self._action_scale * action, self._action_scale * action],
+                                    forces=self._forces,
                                     physicsClientId=self._physics_client_id)
         p.stepSimulation(physicsClientId=self._physics_client_id)
         observation = self._observation()
         done = SelfBalancingRobotEnv._done(observation)
         if done:
-            reward = -100
+            reward = -1000
         else:
             reward = 1
-        return observation, reward, done
+        reward -= observation[1]  # the further from the center, the smaller the reward
+        return np.array(observation), reward, done, ''
 
     def _observation(self):
         """Get robot's tilt angle."""
         robot_pos, robot_orn = p.getBasePositionAndOrientation(bodyUniqueId=self._robot_id,
                                                                physicsClientId=self._physics_client_id)
         robot_angle = p.getEulerFromQuaternion(robot_orn)[1]
+        wheels_velocities, _ = self.wheels_state()
+        wheel_vel = wheels_velocities[0]
         if not self._measurement_noise:
-            robot_angle += 0.01 * np.random.randn()
-        return robot_angle
+            robot_angle += self._noise_coeff * np.random.randn()
+            # wheels_velocities = [vel + self._noise_coeff * np.random.randn() for vel in wheels_velocities]
+            wheel_vel += self._noise_coeff * np.random.randn()
+            robot_pos = [pos + self._noise_coeff * np.random.randn() for pos in robot_pos]
+        dist = np.sqrt(robot_pos[0] ** 2 + robot_pos[1] ** 2)  # distance only on XY plane
+        # return robot_angle, dist, wheels_velocities[0], wheels_velocities[1]
+        return robot_angle, dist, wheel_vel,
 
     @staticmethod
-    def _done(observation: float) -> bool:
+    def _done(observation: tuple) -> bool:
         """When robot tilts to much, episode is done."""
-        return True if abs(observation) > np.deg2rad(10) else False
+        angle, dist = observation[0], observation[1]
+        return True if abs(angle) > np.deg2rad(15) or dist > 0.5 else False
 
     @property
     def forces(self) -> list:
@@ -53,6 +68,26 @@ class SelfBalancingRobotEnv:
         if len(val) != 2:
             raise ValueError('There should be two forces.')
         self._forces = val
+
+    @property
+    def action_scale(self) -> float:
+        """Action scale coefficient getter."""
+        return self._action_scale
+
+    @action_scale.setter
+    def action_scale(self, val: float):
+        """Action scale coefficient setter."""
+        self._action_scale = val
+
+    @property
+    def noise_coeff(self) -> float:
+        """Measurement noise coefficient getter."""
+        return self._noise_coeff
+
+    @noise_coeff.setter
+    def noise_coeff(self, val: float):
+        """Measurement noise coefficient setter."""
+        self._noise_coeff = val
 
     def reset(self):
         """Resets simulation and spawn every object in its initial position."""
@@ -93,7 +128,7 @@ class SelfBalancingRobotEnv:
                                            useMaximalCoordinates=False,
                                            physicsClientId=self._physics_client_id)
 
-        return self._observation()
+        return np.array(self._observation())
 
     @staticmethod
     def _starting_angle(angle=1):

@@ -1,10 +1,9 @@
 #!/usr/bin/env python
 import time
 import pybullet as p
-# import numpy as np
+import numpy as np
 import random
-import matplotlib.pyplot as plt
-from env import SelfBalancingRobotEnv
+from environment.env import SelfBalancingRobotEnv
 
 DT = 1 / 240
 
@@ -24,15 +23,20 @@ if __name__ == '__main__':
             break
 
         action = random.random() * 2 - 1  # [-1, 1)
-        observation, reward, done = env.step(action)
-        # print(f'Wheels stats: {env.wheels_state()}')
-        accumulated_reward += reward
+        observation, reward, done, _ = env.step(np.array([action, action]))
         if done:
-            print(accumulated_reward)
             accumulated_reward = 0
-            obs = env.reset()
+            # obs = env.reset()
 
         time.sleep(DT)
+
+    # for i in range(10):
+    #     print(i)
+    #     if i == 5:
+    #         break
+    # else:
+    #     print('no break')
+    # print('something else')
 
     p.disconnect(physicsClientId=pc)
 

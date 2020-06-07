@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import pybullet as p
 
 
 class RobotPart:
