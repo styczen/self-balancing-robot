@@ -10,84 +10,25 @@ class SelfBalancingRobotEnv:
     OBSERVATION_SIZE = 3
     ACTION_SIZE = 1
 
-    def __init__(self, physics_client_id: int, measurement_noise=False, noise_coeff=0.01, action_scale=10):
+    def __init__(self, physics_client_id: int,
+                 # action_scale=10
+                 ):
         self._physics_client_id = physics_client_id
-        self._forces = [1, 1]
-        self._measurement_noise = measurement_noise
-        self._noise_coeff = noise_coeff
+        # self._forces = [1, 1]
         self._robot_id = None
-        self._action_scale = action_scale
+        # self._action_scale = action_scale
+        self._vd = 0  # desired velocity
+        self._vt = 0  # current velocity
+        self._maxV = 24.6  # 235RPM = 24,609142453 rad/sec maximum velocity of robot
 
     def step(self, action) -> tuple:
         """Apply control and run one step of simulation."""
-        p.setJointMotorControlArray(bodyUniqueId=self._robot_id, jointIndices=[0, 1],
-                                    controlMode=p.VELOCITY_CONTROL,
-                                    targetVelocities=[self._action_scale * action, self._action_scale * action],
-                                    forces=self._forces,
-                                    physicsClientId=self._physics_client_id)
+        self._apply_action(action)
         p.stepSimulation(physicsClientId=self._physics_client_id)
         observation = self._observation()
-        done = SelfBalancingRobotEnv._done(observation)
-        if done:
-            reward = -1000
-        else:
-            reward = 1
-        reward -= observation[1]  # the further from the center, the smaller the reward
-        return np.array(observation), reward, done, ''
-
-    def _observation(self):
-        """Get robot's tilt angle."""
-        robot_pos, robot_orn = p.getBasePositionAndOrientation(bodyUniqueId=self._robot_id,
-                                                               physicsClientId=self._physics_client_id)
-        robot_angle = p.getEulerFromQuaternion(robot_orn)[1]
-        wheels_velocities, _ = self.wheels_state()
-        wheel_vel = wheels_velocities[0]
-        if not self._measurement_noise:
-            robot_angle += self._noise_coeff * np.random.randn()
-            # wheels_velocities = [vel + self._noise_coeff * np.random.randn() for vel in wheels_velocities]
-            wheel_vel += self._noise_coeff * np.random.randn()
-            robot_pos = [pos + self._noise_coeff * np.random.randn() for pos in robot_pos]
-        dist = np.sqrt(robot_pos[0] ** 2 + robot_pos[1] ** 2)  # distance only on XY plane
-        # return robot_angle, dist, wheels_velocities[0], wheels_velocities[1]
-        return robot_angle, dist, wheel_vel,
-
-    @staticmethod
-    def _done(observation: tuple) -> bool:
-        """When robot tilts to much, episode is done."""
-        angle, dist = observation[0], observation[1]
-        return True if abs(angle) > np.deg2rad(15) or dist > 1 else False
-
-    @property
-    def forces(self) -> list:
-        """Getter for forces."""
-        return self._forces
-
-    @forces.setter
-    def forces(self, val: list):
-        """Setter for forces on the wheel."""
-        if len(val) != 2:
-            raise ValueError('There should be two forces.')
-        self._forces = val
-
-    @property
-    def action_scale(self) -> float:
-        """Action scale coefficient getter."""
-        return self._action_scale
-
-    @action_scale.setter
-    def action_scale(self, val: float):
-        """Action scale coefficient setter."""
-        self._action_scale = val
-
-    @property
-    def noise_coeff(self) -> float:
-        """Measurement noise coefficient getter."""
-        return self._noise_coeff
-
-    @noise_coeff.setter
-    def noise_coeff(self, val: float):
-        """Measurement noise coefficient setter."""
-        self._noise_coeff = val
+        done = self._done()
+        reward = self._reward()
+        return observation, reward, done, ''
 
     def reset(self):
         """Resets simulation and spawn every object in its initial position."""
@@ -128,7 +69,35 @@ class SelfBalancingRobotEnv:
                                            useMaximalCoordinates=False,
                                            physicsClientId=self._physics_client_id)
 
-        return np.array(self._observation())
+        return self._observation()
+
+    def _observation(self):
+        """Get robot's tilt angle."""
+        robot_pos, robot_orn = p.getBasePositionAndOrientation(bodyUniqueId=self._robot_id,
+                                                               physicsClientId=self._physics_client_id)
+        robot_euler = p.getEulerFromQuaternion(robot_orn)
+        linear_vel, angular_vel = p.getBaseVelocity(bodyUniqueId=self._robot_id,
+                                                    physicsClientId=self._physics_client_id)
+        return np.array([robot_euler[1], angular_vel[1], self._vt])
+
+    def _reward(self):
+        return 0.1 - abs(self._vt - self._vd) * 0.005
+
+    def _apply_action(self, action):
+        vt = self._vt + action  # dt = 1 so action is essentially acceleration so control with torque
+        self._vt = np.clip(a=vt, a_min=-self._maxV, a_max=self._maxV)[0]
+        p.setJointMotorControlArray(bodyUniqueId=self._robot_id, jointIndices=[0, 1],
+                                    controlMode=p.VELOCITY_CONTROL,
+                                    targetVelocities=[self._vt, self._vt],
+                                    # forces=self._forces,
+                                    physicsClientId=self._physics_client_id)
+
+    def _done(self) -> bool:
+        """When robot tilts to much, episode is done."""
+        robot_pos, robot_orn = p.getBasePositionAndOrientation(bodyUniqueId=self._robot_id,
+                                                               physicsClientId=self._physics_client_id)
+        robot_euler = p.getEulerFromQuaternion(robot_orn)
+        return abs(robot_euler[1]) > np.deg2rad(45)
 
     @staticmethod
     def _starting_angle(angle=1):
@@ -142,3 +111,35 @@ class SelfBalancingRobotEnv:
         velocities = (state[0][1], state[1][1])
         applied_torques = (state[0][3], state[1][3])
         return velocities, applied_torques
+
+    # @property
+    # def forces(self) -> list:
+    #     """Getter for forces."""
+    #     return self._forces
+    #
+    # @forces.setter
+    # def forces(self, val: list):
+    #     """Setter for forces on the wheel."""
+    #     if len(val) != 2:
+    #         raise ValueError('There should be two forces.')
+    #     self._forces = val
+
+    # @property
+    # def action_scale(self) -> float:
+    #     """Action scale coefficient getter."""
+    #     return self._action_scale
+    #
+    # @action_scale.setter
+    # def action_scale(self, val: float):
+    #     """Action scale coefficient setter."""
+    #     self._action_scale = val
+
+    # @property
+    # def noise_coeff(self) -> float:
+    #     """Measurement noise coefficient getter."""
+    #     return self._noise_coeff
+    #
+    # @noise_coeff.setter
+    # def noise_coeff(self, val: float):
+    #     """Measurement noise coefficient setter."""
+    #     self._noise_coeff = val

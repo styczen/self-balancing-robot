@@ -14,17 +14,19 @@ if __name__ == '__main__':
     p.resetDebugVisualizerCamera(cameraDistance=2, cameraYaw=45, cameraPitch=-30, cameraTargetPosition=[0, 0, 0])
 
     # Environment
-    env = SelfBalancingRobotEnv(physics_client_id=pc, measurement_noise=False)
+    env = SelfBalancingRobotEnv(physics_client_id=pc)
 
     # DDPG agent
-    agent = Agent(state_size=env.OBSERVATION_SIZE, action_size=env.ACTION_SIZE, random_seed=0)
+    agent = Agent(state_size=env.OBSERVATION_SIZE, action_size=env.ACTION_SIZE, random_seed=41,
+                  fc1_units=400, fc2_units=300)
 
     # Load actor's and critic's network weights
-    # agent.actor_local.load_state_dict(torch.load('checkpoint_actor.pth'))
-    # agent.critic_local.load_state_dict(torch.load('checkpoint_critic.pth'))
-
-    agent.actor_local.load_state_dict(torch.load('finished_episode_checkpoint_actor.pth'))
-    agent.critic_local.load_state_dict(torch.load('finished_episode_checkpoint_critic.pth'))
+    try:
+        agent.actor_local.load_state_dict(torch.load('finished_episode_checkpoint_actor.pth'))
+        agent.critic_local.load_state_dict(torch.load('finished_episode_checkpoint_critic.pth'))
+    except FileNotFoundError:
+        agent.actor_local.load_state_dict(torch.load('checkpoint_actor.pth'))
+        agent.critic_local.load_state_dict(torch.load('checkpoint_critic.pth'))
 
     shutdown = False
     max_t = 1500
