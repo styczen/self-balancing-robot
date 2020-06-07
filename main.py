@@ -23,7 +23,7 @@ if __name__ == '__main__':
             break
 
         action = random.random() * 2 - 1  # [-1, 1)
-        observation, reward, done, _ = env.step(np.array([action, action]))
+        observation, reward, done, _ = env.step(0)
         if done:
             accumulated_reward = 0
             # obs = env.reset()

@@ -55,7 +55,7 @@ class SelfBalancingRobotEnv:
     def _done(observation: tuple) -> bool:
         """When robot tilts to much, episode is done."""
         angle, dist = observation[0], observation[1]
-        return True if abs(angle) > np.deg2rad(15) or dist > 0.5 else False
+        return True if abs(angle) > np.deg2rad(15) or dist > 1 else False
 
     @property
     def forces(self) -> list:

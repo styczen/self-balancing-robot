@@ -20,13 +20,17 @@ if __name__ == '__main__':
     agent = Agent(state_size=env.OBSERVATION_SIZE, action_size=env.ACTION_SIZE, random_seed=0)
 
     # Load actor's and critic's network weights
-    agent.actor_local.load_state_dict(torch.load('checkpoint_actor.pth'))
-    agent.critic_local.load_state_dict(torch.load('checkpoint_critic.pth'))
+    # agent.actor_local.load_state_dict(torch.load('checkpoint_actor.pth'))
+    # agent.critic_local.load_state_dict(torch.load('checkpoint_critic.pth'))
+
+    agent.actor_local.load_state_dict(torch.load('finished_episode_checkpoint_actor.pth'))
+    agent.critic_local.load_state_dict(torch.load('finished_episode_checkpoint_critic.pth'))
 
     shutdown = False
+    max_t = 1500
     for i_episode in range(1000):
         state = env.reset()
-        for t in range(1000):
+        for t in range(max_t):
             keys = p.getKeyboardEvents(physicsClientId=pc)
             if ord('q') in keys and keys[ord('q')] & p.KEY_WAS_TRIGGERED:
                 shutdown = True
